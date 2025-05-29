@@ -1,0 +1,361 @@
+{
+  "Uuid": "7bdd4820-623f-4e28-8e5f-cd19a8eaecfd",
+  "IsCustomNode": false,
+  "Description": "",
+  "Name": "EtiquetarAutomaticamente",
+  "ElementResolver": {
+    "ResolutionMap": {}
+  },
+  "Inputs": [],
+  "Outputs": [],
+  "Nodes": [
+    {
+      "ConcreteType": "CoreNodeModels.Input.StringInput, CoreNodeModels",
+      "Id": "5d0d9fc437204e928b7331234cbf7ef9",
+      "NodeType": "StringInputNode",
+      "Inputs": [],
+      "Outputs": [
+        {
+          "Id": "f182d5c615014217a8526be218060c45",
+          "Name": "",
+          "Description": "String",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        }
+      ],
+      "Replication": "Disabled",
+      "Description": "Creates a string",
+      "InputValue": "EBB_Chapter_II"
+    },
+    {
+      "ConcreteType": "CoreNodeModels.Input.StringInput, CoreNodeModels",
+      "Id": "61f810ed1d0646f38c0f392410e53e38",
+      "NodeType": "StringInputNode",
+      "Inputs": [],
+      "Outputs": [
+        {
+          "Id": "37ac74ddebcc4928bd199e4662ac4e11",
+          "Name": "",
+          "Description": "String",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        }
+      ],
+      "Replication": "Disabled",
+      "Description": "Creates a string",
+      "InputValue": "Name_Apartment_Typology"
+    },
+    {
+      "ConcreteType": "CoreNodeModels.Input.StringInput, CoreNodeModels",
+      "Id": "cdf36df028694625ab85fb73d2b8f3f3",
+      "NodeType": "StringInputNode",
+      "Inputs": [],
+      "Outputs": [
+        {
+          "Id": "469e8fb799ba42e6aaef598ee0bfbed7",
+          "Name": "",
+          "Description": "String",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        }
+      ],
+      "Replication": "Disabled",
+      "Description": "Creates a string",
+      "InputValue": "Apartment Layout"
+    },
+    {
+      "ConcreteType": "PythonNodeModels.PythonNode, PythonNodeModels",
+      "Code": "import clr                                                                                   # 1\r\nclr.AddReference('RevitAPI')                                                                 # 2\r\nclr.AddReference('RevitServices')                                                            # 3\r\nclr.AddReference('RevitNodes')                                                               # 4\r\nimport Revit                                                                                 # 5\r\nclr.ImportExtensions(Revit.Elements)                                                         # 6\r\n\r\nfrom Autodesk.Revit.DB import (FilteredElementCollector, View, IndependentTag,               # 7\r\n                               TagMode, TagOrientation, StorageType, BuiltInCategory,         # 8\r\n                               Reference, XYZ)                                               # 9\r\nfrom RevitServices.Persistence import DocumentManager                                        # 10\r\nfrom RevitServices.Transactions import TransactionManager                                    # 11\r\n\r\n# Entradas de Dynamo                                                                          #\r\nviews_wrapped  = IN[0]    # lista de vistas (wrapped)                                        # 12\r\nparam_name     = IN[1]    # e.g. \"EBB_Chapter_II\"                                             # 13\r\nfilter_value   = IN[2]    # e.g. \"apartment Layout\"                                         # 14\r\nsymbol_wrapped = IN[3]    # FamilyType de Room Tag (Name_Apartment_Typology)                  # 15\r\n\r\ndoc = DocumentManager.Instance.CurrentDBDocument                                             # 16\r\n\r\n# 1) Unwrap o fallback a collector                                                            #\r\nif views_wrapped is not None:                                                                 # 17\r\n    try:                                                                                      # 18\r\n        views_api = UnwrapElement(views_wrapped)                                             # 19\r\n    except:                                                                                   # 20\r\n        views_api = list(views_wrapped)                                                      # 21\r\nelse:                                                                                         # 22\r\n    views_api = FilteredElementCollector(doc)                                                \\\r\n        .OfClass(View)                                                                       \\\r\n        .WhereElementIsNotElementType()                                                      \\\r\n        .ToElements()                                                                        # 23\r\n\r\n# 2) Unwrap del símbolo de etiqueta                                                            #\r\ntry:                                                                                          # 24\r\n    symbol = UnwrapElement(symbol_wrapped)                                                   # 25\r\nexcept:                                                                                       # 26\r\n    symbol = symbol_wrapped                                                                  # 27\r\n\r\n# 3) Filtrar vistas por parámetro                                                               #\r\nfiltered = []                                                                                 # 28\r\nfor v in views_api:                                                                           # 29\r\n    if getattr(v, 'IsTemplate', False):                                                       # 30\r\n        continue                                                                              # 31\r\n    p = v.LookupParameter(param_name)                                                         # 32\r\n    if p and p.StorageType == StorageType.String and p.AsString() == filter_value:           # 33\r\n        filtered.append(v)                                                                    # 34\r\n\r\n# 4) Activar el tipo de etiqueta si hace falta                                                 #\r\nif not symbol.IsActive:                                                                       # 35\r\n    symbol.Activate()                                                                         # 36\r\n    doc.Regenerate()                                                                          # 37\r\n\r\n# 5) Crear etiquetas en cada viewport                                                           #\r\nTransactionManager.Instance.EnsureInTransaction(doc)                                           # 38\r\nfor v in filtered:                                                                            # 39\r\n    vps = FilteredElementCollector(doc)                                                       \\\r\n        .OfCategory(BuiltInCategory.OST_Viewports)                                            \\\r\n        .WhereElementIsNotElementType()                                                       \\\r\n        .ToElements()                                                                         # 40\r\n    for vp in vps:                                                                             # 41\r\n        if vp.ViewId == v.Id:                                                                  # 42\r\n            loc = vp.Location                                                                  # 43\r\n            if hasattr(loc, 'Point'):                                                         # 44\r\n                pt = loc.Point                                                                 # 45\r\n            elif hasattr(loc, 'Curve'):                                                       # 46\r\n                pt = loc.Curve.Evaluate(0.5, True)                                            # 47\r\n            else:                                                                             # 48\r\n                bb = v.get_BoundingBox(None)                                                  # 49\r\n                if bb is not None:                                                            # 50\r\n                    min_pt = bb.Min                                                           # 51\r\n                    max_pt = bb.Max                                                           # 52\r\n                    pt = XYZ((min_pt.X + max_pt.X)/2.0,                                        # 53\r\n                             (min_pt.Y + max_pt.Y)/2.0,                                        # 54\r\n                             (min_pt.Z + max_pt.Z)/2.0)                                        # 55\r\n                else:                                                                         # 56\r\n                    pt = XYZ(0, 0, 0)                                                         # 57\r\n            ref = Reference(vp)                                                                # 58\r\n            tag = IndependentTag.Create(                                                      # 59\r\n                doc, vp.SheetId, ref, False,                                                  # 60\r\n                TagMode.TM_ADDBY_CATEGORY, TagOrientation.Horizontal, pt                       # 61\r\n            )                                                                                  # 62\r\n            tag.ChangeTypeId(symbol.Id)                                                        # 63\r\n            break                                                                              # 64\r\nTransactionManager.Instance.TransactionTaskDone()                                             # 65\r\n\r\n# 6) Devolver resultados                                                                       #\r\nOUT = filtered                                                                               # 66\r\n",
+      "Engine": "CPython3",
+      "EngineName": "CPython3",
+      "VariableInputPorts": true,
+      "Id": "f09eb944877f4237a33bcf9d626012be",
+      "NodeType": "PythonScriptNode",
+      "Inputs": [
+        {
+          "Id": "ac7b2b1358bc4e85b7337b62ed93012d",
+          "Name": "IN[0]",
+          "Description": "Input #0",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        },
+        {
+          "Id": "9185592db4e74fd78827e5033c8ca230",
+          "Name": "IN[1]",
+          "Description": "Input #1",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        },
+        {
+          "Id": "73eae5ecd1a54178a300991fcdf43844",
+          "Name": "IN[2]",
+          "Description": "Input #2",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        },
+        {
+          "Id": "aa21ba5711054324aeff8dfb5083e51c",
+          "Name": "IN[3]",
+          "Description": "Input #3",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        }
+      ],
+      "Outputs": [
+        {
+          "Id": "def180cfc26e4b50a0f303041088a096",
+          "Name": "OUT",
+          "Description": "Result of the python script",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        }
+      ],
+      "Replication": "Disabled",
+      "Description": "Runs an embedded Python script."
+    },
+    {
+      "ConcreteType": "DSRevitNodesUI.Categories, DSRevitNodesUI",
+      "SelectedIndex": -1,
+      "SelectedString": "",
+      "Id": "5c7f9dad484d451ca8997c4a5ecaefae",
+      "NodeType": "ExtensionNode",
+      "Inputs": [],
+      "Outputs": [
+        {
+          "Id": "1a06399ca4a6449686c1a42164103b27",
+          "Name": "Category",
+          "Description": "The selected Category.",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        }
+      ],
+      "Replication": "Disabled",
+      "Description": "All built-in categories."
+    },
+    {
+      "ConcreteType": "DSRevitNodesUI.ElementsOfCategory, DSRevitNodesUI",
+      "Id": "520533f9580a445abb0c3df9cebcdd7d",
+      "NodeType": "ExtensionNode",
+      "Inputs": [
+        {
+          "Id": "08226beda2ca458c89eebe34eb412c16",
+          "Name": "Category",
+          "Description": "The Category",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        }
+      ],
+      "Outputs": [
+        {
+          "Id": "532d4755e3ae4ee3b4f4499770a33ff7",
+          "Name": "Elements",
+          "Description": "An element class.",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        }
+      ],
+      "Replication": "Disabled",
+      "Description": "Get all elements of the specified category from the model."
+    },
+    {
+      "ConcreteType": "DSRevitNodesUI.FamilyTypes, DSRevitNodesUI",
+      "SelectedIndex": 92,
+      "SelectedString": "Area_Name_Apartment:Name_Apartment_Typology",
+      "Id": "a87d518612b34e34bae1efcf0e58ac8d",
+      "NodeType": "ExtensionNode",
+      "Inputs": [],
+      "Outputs": [
+        {
+          "Id": "a0044654a9cf4e50a68a5c98e796f395",
+          "Name": "Family Type",
+          "Description": "The selected Family Type",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        }
+      ],
+      "Replication": "Disabled",
+      "Description": "All family types available in the document."
+    }
+  ],
+  "Connectors": [
+    {
+      "Start": "f182d5c615014217a8526be218060c45",
+      "End": "9185592db4e74fd78827e5033c8ca230",
+      "Id": "7412b66d236942f6897916ae5eb9254a",
+      "IsHidden": "False"
+    },
+    {
+      "Start": "469e8fb799ba42e6aaef598ee0bfbed7",
+      "End": "73eae5ecd1a54178a300991fcdf43844",
+      "Id": "cbda523b193842e6b6a71c17dea53670",
+      "IsHidden": "False"
+    },
+    {
+      "Start": "1a06399ca4a6449686c1a42164103b27",
+      "End": "08226beda2ca458c89eebe34eb412c16",
+      "Id": "8c727bf47c424c68a6f261e85445ba74",
+      "IsHidden": "False"
+    },
+    {
+      "Start": "532d4755e3ae4ee3b4f4499770a33ff7",
+      "End": "ac7b2b1358bc4e85b7337b62ed93012d",
+      "Id": "05e468fa56dd4629b77117ac8d33d9ce",
+      "IsHidden": "False"
+    },
+    {
+      "Start": "a0044654a9cf4e50a68a5c98e796f395",
+      "End": "aa21ba5711054324aeff8dfb5083e51c",
+      "Id": "37a7997ef20e44aaaff892f2298fa48e",
+      "IsHidden": "False"
+    }
+  ],
+  "Dependencies": [],
+  "NodeLibraryDependencies": [],
+  "Thumbnail": "",
+  "GraphDocumentationURL": null,
+  "ExtensionWorkspaceData": [
+    {
+      "ExtensionGuid": "28992e1d-abb9-417f-8b1b-05e053bee670",
+      "Name": "Properties",
+      "Version": "2.19",
+      "Data": {}
+    },
+    {
+      "ExtensionGuid": "DFBD9CC0-DB40-457A-939E-8C8555555A9D",
+      "Name": "Generative Design",
+      "Version": "6.1",
+      "Data": {}
+    }
+  ],
+  "Author": "",
+  "Linting": {
+    "activeLinter": "None",
+    "activeLinterId": "7b75fb44-43fd-4631-a878-29f4d5d8399a",
+    "warningCount": 0,
+    "errorCount": 0
+  },
+  "Bindings": [],
+  "View": {
+    "Dynamo": {
+      "ScaleFactor": 1.0,
+      "HasRunWithoutCrash": true,
+      "IsVisibleInDynamoLibrary": true,
+      "Version": "2.19.3.6394",
+      "RunType": "Manual",
+      "RunPeriod": "1000"
+    },
+    "Camera": {
+      "Name": "_Background Preview",
+      "EyeX": -17.0,
+      "EyeY": 24.0,
+      "EyeZ": 50.0,
+      "LookX": 12.0,
+      "LookY": -13.0,
+      "LookZ": -58.0,
+      "UpX": 0.0,
+      "UpY": 1.0,
+      "UpZ": 0.0
+    },
+    "ConnectorPins": [],
+    "NodeViews": [
+      {
+        "Id": "5d0d9fc437204e928b7331234cbf7ef9",
+        "Name": "String",
+        "IsSetAsInput": false,
+        "IsSetAsOutput": false,
+        "Excluded": false,
+        "ShowGeometry": true,
+        "X": 590.27490961750482,
+        "Y": 206.68069409720781
+      },
+      {
+        "Id": "61f810ed1d0646f38c0f392410e53e38",
+        "Name": "String",
+        "IsSetAsInput": false,
+        "IsSetAsOutput": false,
+        "Excluded": false,
+        "ShowGeometry": true,
+        "X": 589.27490961750482,
+        "Y": 486.68069409720783
+      },
+      {
+        "Id": "cdf36df028694625ab85fb73d2b8f3f3",
+        "Name": "String",
+        "IsSetAsInput": false,
+        "IsSetAsOutput": false,
+        "Excluded": false,
+        "ShowGeometry": true,
+        "X": 588.27490961750482,
+        "Y": 350.68069409720783
+      },
+      {
+        "Id": "f09eb944877f4237a33bcf9d626012be",
+        "Name": "Python Script",
+        "IsSetAsInput": false,
+        "IsSetAsOutput": false,
+        "Excluded": false,
+        "ShowGeometry": true,
+        "X": 1105.2749096175046,
+        "Y": 413.0
+      },
+      {
+        "Id": "5c7f9dad484d451ca8997c4a5ecaefae",
+        "Name": "Categories",
+        "IsSetAsInput": false,
+        "IsSetAsOutput": false,
+        "Excluded": false,
+        "ShowGeometry": true,
+        "X": 135.0,
+        "Y": 55.0
+      },
+      {
+        "Id": "520533f9580a445abb0c3df9cebcdd7d",
+        "Name": "All Elements of Category",
+        "IsSetAsInput": false,
+        "IsSetAsOutput": false,
+        "Excluded": false,
+        "ShowGeometry": true,
+        "X": 511.0,
+        "Y": 56.0
+      },
+      {
+        "Id": "a87d518612b34e34bae1efcf0e58ac8d",
+        "Name": "Family Types",
+        "IsSetAsInput": false,
+        "IsSetAsOutput": false,
+        "Excluded": false,
+        "ShowGeometry": true,
+        "X": 348.09963565550009,
+        "Y": 646.15977525620679
+      }
+    ],
+    "Annotations": [],
+    "X": 41.269113288613426,
+    "Y": -1.8433033292878918,
+    "Zoom": 0.910063803931439
+  }
+}
